@@ -139,6 +139,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
         title: const Text('User Profile'),
         backgroundColor: Colors.green,
         elevation: 0,
+        // Remove back button completely
+        automaticallyImplyLeading: false,
         actions: [
           IconButton(
             icon: Icon(Icons.save),

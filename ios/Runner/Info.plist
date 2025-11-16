@@ -46,7 +46,9 @@
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
 	<key>NSCameraUsageDescription</key>
-	<string>This app needs access to your camera to take photos of plants for diagnosis.</string>
+	<string>This app needs access to your camera to take photos of services and equipment.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>This app needs access to your photo library to select images for services.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>This app needs access to your microphone for voice chat functionality.</string>
 </dict>

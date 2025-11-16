@@ -46,6 +46,16 @@ class _VerificationScreenState extends State<VerificationScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      appBar: AppBar(
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () {
+            Navigator.pop(context);
+          },
+        ),
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+      ),
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 24.0),
@@ -65,6 +75,12 @@ class _VerificationScreenState extends State<VerificationScreen> {
               const Text(
                 'Enter the 4 digits code sent to your email',
                 style: TextStyle(fontSize: 16, color: Colors.black54),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                'For password reset',
+                style: TextStyle(fontSize: 14, color: Colors.black54, fontStyle: FontStyle.italic),
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 24),
@@ -115,7 +131,7 @@ class _VerificationScreenState extends State<VerificationScreen> {
                     disabledBackgroundColor: Colors.green.withOpacity(0.5),
                   ),
                   child: Text(
-                    _allFieldsFilled ? 'Sign Up' : 'Verify',
+                    _allFieldsFilled ? 'Verify & Reset Password' : 'Verify',
                     style: TextStyle(fontSize: 18, color: _allFieldsFilled ? Colors.white : Colors.white.withOpacity(0.7)),
                   ),
                 ),

@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../services/auth_api.dart';
+import '../services/api_config.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -11,6 +13,7 @@ class LoginScreen extends StatefulWidget {
 class _LoginScreenState extends State<LoginScreen> {
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
+  bool _isLoading = false;
 
   Future<void> _handleLogin() async {
     if (_emailController.text.isEmpty || _passwordController.text.isEmpty) {
@@ -20,13 +23,50 @@ class _LoginScreenState extends State<LoginScreen> {
       return;
     }
 
-    // For demo purposes, accept any non-empty email/password
+    setState(() => _isLoading = true);
+
+    try {
+      final authApi = AuthApi();
+      final result = await authApi.signin(
+        email: _emailController.text.trim(),
+        password: _passwordController.text,
+      );
+
+      if (result['success'] == true) {
     final prefs = await SharedPreferences.getInstance();
+        final user = result['user'] as Map<String, dynamic>;
+        final token = result['token'] as String;
+
+        // Save authentication data
     await prefs.setBool('isLoggedIn', true);
-    await prefs.setString('userEmail', _emailController.text);
-    
-    if (mounted) {
-      Navigator.pushReplacementNamed(context, '/verification');
+        await prefs.setString('userEmail', user['email'] ?? _emailController.text);
+        await prefs.setString('userRole', user['role'] ?? 'farmer');
+        await prefs.setString('userId', user['id'] ?? '');
+        await ApiConfig.setToken(token);
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Login successful'),
+              backgroundColor: Colors.green,
+            ),
+          );
+          Navigator.pushReplacementNamed(context, '/home');
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Login failed: ${e.toString().replaceAll('Exception: ', '')}'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
     }
   }
 
@@ -95,7 +135,10 @@ class _LoginScreenState extends State<LoginScreen> {
                   children: [
                     const Text('Password', style: TextStyle(fontWeight: FontWeight.w600)),
                     GestureDetector(
-                      onTap: () {},
+                      onTap: () {
+                        // Navigate to verification screen for forgot password
+                        Navigator.pushNamed(context, '/verification');
+                      },
                       child: const Text(
                         'Forgot Password?',
                         style: TextStyle(
@@ -119,13 +162,23 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
                 const SizedBox(height: 32),
                 ElevatedButton(
-                  onPressed: _handleLogin,
+                  onPressed: _isLoading ? null : _handleLogin,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.green,
                     minimumSize: const Size(double.infinity, 50),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
+                    disabledBackgroundColor: Colors.green.withOpacity(0.5),
                   ),
-                  child: const Text('Login', style: TextStyle(fontSize: 18)),
+                  child: _isLoading
+                      ? const SizedBox(
+                          height: 20,
+                          width: 20,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                          ),
+                        )
+                      : const Text('Login', style: TextStyle(fontSize: 18)),
                 ),
                 const SizedBox(height: 16),
                 Row(
@@ -134,7 +187,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     const Text('Not a member? '),
                     GestureDetector(
                       onTap: () {
-                        Navigator.pushNamed(context, '/signup');
+                        Navigator.pushNamed(context, '/role-selection');
                       },
                       child: const Text(
                         'Sign up',

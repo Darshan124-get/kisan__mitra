@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../services/auth_api.dart';
+import '../services/api_config.dart';
 
 class SignupScreen extends StatefulWidget {
-  const SignupScreen({super.key});
+  final String? selectedRole;
+  const SignupScreen({super.key, this.selectedRole});
 
   @override
   State<SignupScreen> createState() => _SignupScreenState();
@@ -12,6 +15,7 @@ class _SignupScreenState extends State<SignupScreen> {
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
   final TextEditingController _confirmPasswordController = TextEditingController();
+  bool _isLoading = false;
 
   Future<void> _handleSignup() async {
     if (_emailController.text.isEmpty || 
@@ -23,6 +27,13 @@ class _SignupScreenState extends State<SignupScreen> {
       return;
     }
 
+    if (_passwordController.text.length < 6) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Password must be at least 6 characters')),
+      );
+      return;
+    }
+
     if (_passwordController.text != _confirmPasswordController.text) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Passwords do not match')),
@@ -30,13 +41,69 @@ class _SignupScreenState extends State<SignupScreen> {
       return;
     }
 
-    // For demo purposes, accept any valid signup
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool('isLoggedIn', true);
-    await prefs.setString('userEmail', _emailController.text);
-    
-    if (mounted) {
-      Navigator.pushReplacementNamed(context, '/verification');
+    final role = widget.selectedRole ?? 'farmer';
+    if (role.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please select a role')),
+      );
+      return;
+    }
+
+    setState(() => _isLoading = true);
+
+    try {
+      final authApi = AuthApi();
+      final result = await authApi.signup(
+        email: _emailController.text.trim(),
+        password: _passwordController.text,
+        role: role,
+      );
+
+      if (result['success'] == true) {
+        final prefs = await SharedPreferences.getInstance();
+        final user = result['user'] as Map<String, dynamic>;
+        final token = result['token'] as String;
+
+        // Save authentication data
+        await prefs.setBool('isLoggedIn', true);
+        await prefs.setString('userEmail', user['email'] ?? _emailController.text);
+        await prefs.setString('userRole', user['role'] ?? role);
+        await prefs.setString('userId', user['id'] ?? '');
+        await ApiConfig.setToken(token);
+
+        // Verify token was saved
+        final savedToken = await ApiConfig.getToken();
+        print('🔐 [SignupScreen] Token saved: ${savedToken != null}');
+        if (savedToken != null) {
+          print('   Token length: ${savedToken.length}');
+          print('   Token preview: ${savedToken.substring(0, savedToken.length > 10 ? 10 : savedToken.length)}...');
+        } else {
+          print('   ❌ WARNING: Token was not saved properly!');
+        }
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Signup successful'),
+              backgroundColor: Colors.green,
+            ),
+          );
+          Navigator.pushReplacementNamed(context, '/home');
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Signup failed: ${e.toString().replaceAll('Exception: ', '')}'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
     }
   }
 
@@ -127,13 +194,23 @@ class _SignupScreenState extends State<SignupScreen> {
                 ),
                 const SizedBox(height: 32),
                 ElevatedButton(
-                  onPressed: _handleSignup,
+                  onPressed: _isLoading ? null : _handleSignup,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.green,
                     minimumSize: const Size(double.infinity, 50),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
+                    disabledBackgroundColor: Colors.green.withOpacity(0.5),
                   ),
-                  child: const Text('Sign Up', style: TextStyle(fontSize: 18)),
+                  child: _isLoading
+                      ? const SizedBox(
+                          height: 20,
+                          width: 20,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                          ),
+                        )
+                      : const Text('Sign Up', style: TextStyle(fontSize: 18)),
                 ),
                 const SizedBox(height: 16),
                 Row(

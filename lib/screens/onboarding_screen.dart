@@ -50,7 +50,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
             'Get instant analysis of the problem and practical treatment steps—tailored to local needs for easy reach.',
             buttonText: 'Get Started!',
             onNext: () {
-              Navigator.pushReplacementNamed(context, '/signup');
+              Navigator.pushReplacementNamed(context, '/role-selection');
             },
             showSkip: false,
             isLast: true,
