@@ -10,12 +10,12 @@ import 'settings_screen.dart';
 import 'profile_screen.dart';
 import 'package:google_generative_ai/google_generative_ai.dart';
 import 'package:intl/intl.dart';
+import '../services/api_config.dart';
 
 // API Configuration
 const String PLANT_ID_API_KEY = 'ZJdJrTuQGq2QUQNHIVZ32pg2Trmhl4jdrTTYyc8A76Mf2X2UGu';
 const String PLANT_ID_API_URL = 'https://api.plant.id/v2/identify';
 const String GEMINI_API_KEY = 'AIzaSyArcPvETiGsrZBligburcY8A53hlRCLeD4';
-const String BACKEND_URL = 'http://localhost:3000/api'; // Update with your backend URL
 
 // Define a simple ChatMessage class
 enum MessageType { text, image }
@@ -330,7 +330,7 @@ Please provide:
 
   Future<void> _loadSearchHistory() async {
     try {
-      final response = await http.get(Uri.parse('$BACKEND_URL/search-history'));
+      final response = await http.get(Uri.parse('${ApiConfig.baseUrl}/search-history'));
       if (response.statusCode == 200) {
         setState(() {
           _searchHistory = List<Map<String, dynamic>>.from(json.decode(response.body));
@@ -344,7 +344,7 @@ Please provide:
   Future<void> _saveSearchHistory(String query, String type) async {
     try {
       final response = await http.post(
-        Uri.parse('$BACKEND_URL/search-history'),
+        Uri.parse('${ApiConfig.baseUrl}/search-history'),
         headers: {'Content-Type': 'application/json'},
         body: json.encode({
           'query': query,

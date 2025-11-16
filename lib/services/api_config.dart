@@ -2,16 +2,26 @@ import 'dart:io';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class ApiConfig {
-  // Use 10.0.2.2 for Android emulator, localhost for iOS simulator
-  static String get baseUrl {
+  // Production server URL
+  static const String _productionUrl = 'https://kisan-mitra-e656.onrender.com/api';
+  
+  // Development URLs (for local testing)
+  static String _getDevelopmentUrl() {
     if (Platform.isAndroid) {
       return 'http://10.0.2.2:3000/api';
     } else if (Platform.isIOS) {
       return 'http://localhost:3000/api';
     } else {
-      // For web/desktop, use localhost
       return 'http://localhost:3000/api';
     }
+  }
+  
+  // Use production URL by default
+  // To use local development server, change this to false
+  static const bool _useProduction = true;
+  
+  static String get baseUrl {
+    return _useProduction ? _productionUrl : _getDevelopmentUrl();
   }
   
   static Future<String?> getToken() async {
