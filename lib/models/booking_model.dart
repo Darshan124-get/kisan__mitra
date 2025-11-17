@@ -4,6 +4,7 @@ class Booking {
   final String? serviceTitle;
   final String farmerId;
   final String? farmerName;
+  final String? farmerPhone;
   final String laborerId;
   final String? laborerName;
   final DateTime bookingDate;
@@ -24,6 +25,7 @@ class Booking {
     this.serviceTitle,
     required this.farmerId,
     this.farmerName,
+    this.farmerPhone,
     required this.laborerId,
     this.laborerName,
     required this.bookingDate,
@@ -54,6 +56,9 @@ class Booking {
       farmerName: json['farmerId'] is Map 
           ? (json['farmerId']?['name'] as String?)
           : (json['farmerName'] as String?),
+      farmerPhone: json['farmerId'] is Map 
+          ? (json['farmerId']?['phone'] as String?)
+          : (json['farmerPhone'] as String?),
       laborerId: json['laborerId'] is String 
           ? json['laborerId'] 
           : json['laborerId']?['_id'] ?? json['laborerId']?['id'] ?? '',
@@ -128,6 +133,7 @@ class Booking {
       serviceTitle: serviceTitle ?? this.serviceTitle,
       farmerId: farmerId ?? this.farmerId,
       farmerName: farmerName ?? this.farmerName,
+      farmerPhone: farmerPhone ?? this.farmerPhone,
       laborerId: laborerId ?? this.laborerId,
       laborerName: laborerName ?? this.laborerName,
       bookingDate: bookingDate ?? this.bookingDate,

@@ -19,8 +19,8 @@ class _BookingScreenState extends ConsumerState<BookingScreen> {
   DateTime _focusedDay = DateTime.now();
   DateTime _selectedDay = DateTime.now();
   CalendarFormat _calendarFormat = CalendarFormat.month;
-  String? _startTime;
-  String? _endTime;
+  TimeOfDay? _startTime;
+  TimeOfDay? _endTime;
   final _instructionsController = TextEditingController();
   bool _isLoading = false;
 
@@ -49,16 +49,24 @@ class _BookingScreenState extends ConsumerState<BookingScreen> {
     return daySchedule.isAvailable;
   }
 
+  String _formatTimeOfDay(TimeOfDay time) {
+    return '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}';
+  }
+
   double _calculatePrice() {
     if (_startTime == null || _endTime == null) return 0.0;
 
-    // Parse times
-    final startParts = _startTime!.split(':');
-    final endParts = _endTime!.split(':');
-    final startHour = int.parse(startParts[0]) + (int.parse(startParts[1]) / 60);
-    final endHour = int.parse(endParts[0]) + (int.parse(endParts[1]) / 60);
-    final duration = endHour - startHour;
+    // Calculate duration in hours
+    final startMinutes = _startTime!.hour * 60 + _startTime!.minute;
+    final endMinutes = _endTime!.hour * 60 + _endTime!.minute;
+    var duration = (endMinutes - startMinutes) / 60.0;
 
+    // Handle case where end time is next day (e.g., 23:00 to 01:00)
+    if (duration <= 0) {
+      duration = (24 * 60 - startMinutes + endMinutes) / 60.0;
+    }
+
+    if (duration <= 0) return 0.0;
     return widget.service.pricePerHour * duration;
   }
 
@@ -77,6 +85,24 @@ class _BookingScreenState extends ConsumerState<BookingScreen> {
       return;
     }
 
+    // Calculate duration
+    final startMinutes = _startTime!.hour * 60 + _startTime!.minute;
+    final endMinutes = _endTime!.hour * 60 + _endTime!.minute;
+    var duration = (endMinutes - startMinutes) / 60.0;
+
+    // Handle case where end time is next day
+    if (duration <= 0) {
+      duration = (24 * 60 - startMinutes + endMinutes) / 60.0;
+    }
+
+    // Validate duration (must be positive and reasonable, max 24 hours)
+    if (duration <= 0 || duration > 24) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('End time must be after start time (within 24 hours)')),
+      );
+      return;
+    }
+
     setState(() => _isLoading = true);
 
     try {
@@ -87,19 +113,12 @@ class _BookingScreenState extends ConsumerState<BookingScreen> {
         longitude: position.longitude,
       );
 
-      // Parse times to calculate duration
-      final startParts = _startTime!.split(':');
-      final endParts = _endTime!.split(':');
-      final startHour = int.parse(startParts[0]) + (int.parse(startParts[1]) / 60);
-      final endHour = int.parse(endParts[0]) + (int.parse(endParts[1]) / 60);
-      final duration = endHour - startHour;
-
       final notifier = ref.read(bookingNotifierProvider.notifier);
       await notifier.createBooking(
         serviceId: widget.service.id!,
         bookingDate: _selectedDay,
-        startTime: _startTime!,
-        endTime: _endTime!,
+        startTime: _formatTimeOfDay(_startTime!),
+        endTime: _formatTimeOfDay(_endTime!),
         duration: duration,
         location: BookingLocation(
           latitude: position.latitude,
@@ -219,28 +238,74 @@ class _BookingScreenState extends ConsumerState<BookingScreen> {
             Row(
               children: [
                 Expanded(
-                  child: TextFormField(
-                    decoration: const InputDecoration(
-                      labelText: 'Start Time',
-                      hintText: 'HH:MM',
-                      border: OutlineInputBorder(),
-                    ),
-                    onChanged: (value) {
-                      setState(() => _startTime = value);
+                  child: InkWell(
+                    onTap: () async {
+                      final TimeOfDay? picked = await showTimePicker(
+                        context: context,
+                        initialTime: _startTime ?? TimeOfDay.now(),
+                        builder: (context, child) {
+                          return MediaQuery(
+                            data: MediaQuery.of(context).copyWith(alwaysUse24HourFormat: true),
+                            child: child!,
+                          );
+                        },
+                      );
+                      if (picked != null) {
+                        setState(() => _startTime = picked);
+                      }
                     },
+                    child: InputDecorator(
+                      decoration: InputDecoration(
+                        labelText: 'Start Time',
+                        hintText: 'Tap to select',
+                        border: const OutlineInputBorder(),
+                        suffixIcon: const Icon(Icons.access_time),
+                      ),
+                      child: Text(
+                        _startTime != null 
+                            ? _formatTimeOfDay(_startTime!) 
+                            : 'Select start time',
+                        style: TextStyle(
+                          color: _startTime != null ? Colors.black : Colors.grey[600],
+                        ),
+                      ),
+                    ),
                   ),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
-                  child: TextFormField(
-                    decoration: const InputDecoration(
-                      labelText: 'End Time',
-                      hintText: 'HH:MM',
-                      border: OutlineInputBorder(),
-                    ),
-                    onChanged: (value) {
-                      setState(() => _endTime = value);
+                  child: InkWell(
+                    onTap: () async {
+                      final TimeOfDay? picked = await showTimePicker(
+                        context: context,
+                        initialTime: _endTime ?? TimeOfDay.now(),
+                        builder: (context, child) {
+                          return MediaQuery(
+                            data: MediaQuery.of(context).copyWith(alwaysUse24HourFormat: true),
+                            child: child!,
+                          );
+                        },
+                      );
+                      if (picked != null) {
+                        setState(() => _endTime = picked);
+                      }
                     },
+                    child: InputDecorator(
+                      decoration: InputDecoration(
+                        labelText: 'End Time',
+                        hintText: 'Tap to select',
+                        border: const OutlineInputBorder(),
+                        suffixIcon: const Icon(Icons.access_time),
+                      ),
+                      child: Text(
+                        _endTime != null 
+                            ? _formatTimeOfDay(_endTime!) 
+                            : 'Select end time',
+                        style: TextStyle(
+                          color: _endTime != null ? Colors.black : Colors.grey[600],
+                        ),
+                      ),
+                    ),
                   ),
                 ),
               ],

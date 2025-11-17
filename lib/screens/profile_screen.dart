@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart'; // Import for ImagePicker
 import 'dart:io'; // Import for File class
 import 'package:shared_preferences/shared_preferences.dart';
+import '../services/auth_api.dart';
+import '../services/api_config.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -15,15 +17,19 @@ class _ProfileScreenState extends State<ProfileScreen> {
   String _userName = 'User Name';
   String _userEmail = 'user.email@example.com';
   String _userAddress = 'User Address';
+  String _userPhone = '';
   String? _profileImagePath; // Use imagePath instead of imageUrl for local files
   bool _isLocationAccessEnabled = false;
+  bool _isLoading = false;
 
   // Controllers for text fields
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _addressController = TextEditingController();
+  final TextEditingController _phoneController = TextEditingController();
 
   // Image picker instance
   final ImagePicker _picker = ImagePicker();
+  final AuthApi _authApi = AuthApi();
 
   @override
   void initState() {
@@ -32,23 +38,66 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Future<void> _loadUserData() async {
-    final prefs = await SharedPreferences.getInstance();
-    setState(() {
-      _userName = prefs.getString('userName') ?? 'User Name';
-      _userEmail = prefs.getString('userEmail') ?? 'user.email@example.com';
-      _userAddress = prefs.getString('userAddress') ?? 'User Address';
-      _profileImagePath = prefs.getString('profileImagePath');
-      _isLocationAccessEnabled = prefs.getBool('locationAccess') ?? false;
+    setState(() => _isLoading = true);
+    
+    try {
+      // First try to load from API
+      final token = await ApiConfig.getToken();
+      if (token != null) {
+        try {
+          final result = await _authApi.getCurrentUser(token);
+          if (result['success'] == true) {
+            final user = result['user'] as Map<String, dynamic>;
+            setState(() {
+              _userName = user['name'] ?? '';
+              _userEmail = user['email'] ?? '';
+              _userAddress = user['address'] ?? '';
+              _userPhone = user['phone'] ?? '';
+              
+              _nameController.text = _userName;
+              _addressController.text = _userAddress;
+              _phoneController.text = _userPhone;
+            });
+            
+            // Save to SharedPreferences for offline access
+            final prefs = await SharedPreferences.getInstance();
+            await prefs.setString('userName', _userName);
+            await prefs.setString('userEmail', _userEmail);
+            await prefs.setString('userAddress', _userAddress);
+            await prefs.setString('userPhone', _userPhone);
+            
+            return;
+          }
+        } catch (e) {
+          print('Error loading from API: $e');
+          // Fall through to load from SharedPreferences
+        }
+      }
       
-      _nameController.text = _userName;
-      _addressController.text = _userAddress;
-    });
+      // Fallback to SharedPreferences if API fails
+      final prefs = await SharedPreferences.getInstance();
+      setState(() {
+        _userName = prefs.getString('userName') ?? 'User Name';
+        _userEmail = prefs.getString('userEmail') ?? 'user.email@example.com';
+        _userAddress = prefs.getString('userAddress') ?? 'User Address';
+        _userPhone = prefs.getString('userPhone') ?? '';
+        _profileImagePath = prefs.getString('profileImagePath');
+        _isLocationAccessEnabled = prefs.getBool('locationAccess') ?? false;
+        
+        _nameController.text = _userName;
+        _addressController.text = _userAddress;
+        _phoneController.text = _userPhone;
+      });
+    } finally {
+      setState(() => _isLoading = false);
+    }
   }
 
   @override
   void dispose() {
     _nameController.dispose();
     _addressController.dispose();
+    _phoneController.dispose();
     super.dispose();
   }
 
@@ -106,20 +155,74 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
   }
 
-  // Function to save profile changes (placeholder)
+  // Function to save profile changes
   Future<void> _saveProfileChanges() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('userName', _nameController.text);
-    await prefs.setString('userAddress', _addressController.text);
-    
-    setState(() {
-      _userName = _nameController.text;
-      _userAddress = _addressController.text;
-    });
-    
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Profile saved successfully')),
-    );
+    if (_nameController.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please enter your name')),
+      );
+      return;
+    }
+
+    setState(() => _isLoading = true);
+
+    try {
+      // Save to API
+      final result = await _authApi.updateProfile(
+        name: _nameController.text.trim(),
+        phone: _phoneController.text.trim(),
+        address: _addressController.text.trim(),
+      );
+
+      if (result['success'] == true) {
+        final user = result['user'] as Map<String, dynamic>;
+        
+        // Update local state
+        setState(() {
+          _userName = user['name'] ?? _nameController.text.trim();
+          _userAddress = user['address'] ?? _addressController.text.trim();
+          _userPhone = user['phone'] ?? _phoneController.text.trim();
+        });
+
+        // Save to SharedPreferences for offline access
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString('userName', _userName);
+        await prefs.setString('userAddress', _userAddress);
+        await prefs.setString('userPhone', _userPhone);
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Profile saved successfully'),
+              backgroundColor: Colors.green,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      // If API fails, still save to SharedPreferences
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('userName', _nameController.text.trim());
+      await prefs.setString('userAddress', _addressController.text.trim());
+      await prefs.setString('userPhone', _phoneController.text.trim());
+      
+      setState(() {
+        _userName = _nameController.text.trim();
+        _userAddress = _addressController.text.trim();
+        _userPhone = _phoneController.text.trim();
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Profile saved locally. Error: ${e.toString()}'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      }
+    } finally {
+      setState(() => _isLoading = false);
+    }
   }
 
   // Function to toggle location access (placeholder)
@@ -142,10 +245,23 @@ class _ProfileScreenState extends State<ProfileScreen> {
         // Remove back button completely
         automaticallyImplyLeading: false,
         actions: [
-          IconButton(
-            icon: Icon(Icons.save),
-            onPressed: _saveProfileChanges,
-          ),
+          if (_isLoading)
+            Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                ),
+              ),
+            )
+          else
+            IconButton(
+              icon: Icon(Icons.save),
+              onPressed: _saveProfileChanges,
+            ),
         ],
       ),
       body: SingleChildScrollView(
@@ -194,6 +310,17 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         prefixIcon: Icon(Icons.person_outline),
                         border: OutlineInputBorder(),
                       ),
+                    ),
+                    SizedBox(height: 16),
+                    TextField(
+                      controller: _phoneController,
+                      decoration: InputDecoration(
+                        labelText: 'Mobile Number',
+                        prefixIcon: Icon(Icons.phone_outlined),
+                        border: OutlineInputBorder(),
+                        hintText: 'Enter your mobile number',
+                      ),
+                      keyboardType: TextInputType.phone,
                     ),
                     SizedBox(height: 16),
                     TextField(

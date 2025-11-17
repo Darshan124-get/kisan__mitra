@@ -102,7 +102,10 @@ class ServiceApi {
       if (response.statusCode == 201) {
         final data = jsonDecode(response.body);
         print('   ✅ [ServiceApi] createService - Service created successfully');
-        return Service.fromJson(data['data']['service']);
+        print('   📸 [ServiceApi] Service images: ${data['data']?['service']?['images']}');
+        final service = Service.fromJson(data['data']['service']);
+        print('   📸 [ServiceApi] Parsed service images: ${service.images}');
+        return service;
       } else {
         final errorData = jsonDecode(response.body);
         final errorMessage = errorData['message'] ?? 'Failed to create service';
@@ -126,6 +129,7 @@ class ServiceApi {
   }
 
   Future<List<Service>> getMyServices() async {
+    print('📋 [ServiceApi] getMyServices - Fetching services...');
     try {
       // Verify token exists
       final token = await _getToken();
@@ -142,8 +146,14 @@ class ServiceApi {
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         final services = (data['data']['services'] as List)
-            .map((s) => Service.fromJson(s))
+            .map((s) {
+              print('   📸 [ServiceApi] Raw service images from API: ${s['images']}');
+              final service = Service.fromJson(s);
+              print('   📸 [ServiceApi] Parsed service images: ${service.images}');
+              return service;
+            })
             .toList();
+        print('📋 [ServiceApi] getMyServices - Fetched ${services.length} services');
         return services;
       } else {
         final errorData = jsonDecode(response.body);
@@ -251,7 +261,10 @@ class ServiceApi {
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         print('✅ [ServiceApi] updateService - Service updated successfully');
-        return Service.fromJson(data['data']['service']);
+        print('   📸 [ServiceApi] Service images: ${data['data']?['service']?['images']}');
+        final service = Service.fromJson(data['data']['service']);
+        print('   📸 [ServiceApi] Parsed service images: ${service.images}');
+        return service;
       } else {
         final error = jsonDecode(response.body);
         if (response.statusCode == 401) {

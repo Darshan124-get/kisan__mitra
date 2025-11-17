@@ -31,32 +31,30 @@ class _ServiceDetailScreenState extends ConsumerState<ServiceDetailScreen> {
       return;
     }
 
-    // Format phone number - add country code if missing
-    String formattedNumber = phoneNumber.trim();
-    if (!formattedNumber.startsWith('+')) {
-      // Assume Indian number if no country code
-      if (!formattedNumber.startsWith('91')) {
-        formattedNumber = '91$formattedNumber';
-      }
-      formattedNumber = '+$formattedNumber';
-    }
-
-    final Uri phoneUri = Uri(scheme: 'tel', path: formattedNumber);
+    // Clean phone number - remove any spaces, dashes, or special characters except + and digits
+    String cleanedNumber = phoneNumber.trim().replaceAll(RegExp(r'[^\d+]'), '');
+    
+    // Use tel: scheme for phone calls - use query parameter format
+    final Uri phoneUri = Uri.parse('tel:$cleanedNumber');
     
     try {
-      if (await canLaunchUrl(phoneUri)) {
-        await launchUrl(phoneUri);
-      } else {
-        if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Could not launch phone dialer')),
-          );
-        }
+      // Try to launch directly - canLaunchUrl may return false for tel: on some platforms
+      final launched = await launchUrl(
+        phoneUri,
+        mode: LaunchMode.externalApplication,
+      );
+      
+      if (!launched && context.mounted) {
+        // If launchUrl returns false, try with platformDefault mode
+        await launchUrl(phoneUri, mode: LaunchMode.platformDefault);
       }
     } catch (e) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e')),
+          SnackBar(
+            content: Text('Could not make call: ${e.toString()}'),
+            duration: const Duration(seconds: 3),
+          ),
         );
       }
     }

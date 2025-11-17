@@ -63,7 +63,7 @@ class Service {
       location: ServiceLocation.fromJson(json['location'] ?? {}),
       availability: ServiceAvailability.fromJson(json['availability'] ?? {}),
       images: json['images'] != null 
-          ? List<String>.from(json['images']) 
+          ? List<String>.from(json['images']).where((url) => url != null && url.toString().isNotEmpty).toList()
           : [],
       specifications: ServiceSpecifications.fromJson(
         json['specifications'] ?? {},

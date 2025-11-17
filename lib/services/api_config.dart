@@ -18,7 +18,7 @@ class ApiConfig {
   
   // Use production URL by default
   // To use local development server, change this to false
-  static const bool _useProduction = true;
+  static const bool _useProduction = false;
   
   static String get baseUrl {
     return _useProduction ? _productionUrl : _getDevelopmentUrl();

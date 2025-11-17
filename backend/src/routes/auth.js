@@ -52,7 +52,8 @@ router.post('/signup', async (req, res) => {
       password,
       role,
       name: name || '',
-      phone: phone || ''
+      phone: phone || '',
+      address: req.body.address || ''
     });
 
     await user.save();
@@ -71,6 +72,7 @@ router.post('/signup', async (req, res) => {
           role: user.role,
           name: user.name,
           phone: user.phone,
+          address: user.address,
           isVerified: user.isVerified
         },
         token
@@ -133,6 +135,7 @@ router.post('/signin', async (req, res) => {
           role: user.role,
           name: user.name,
           phone: user.phone,
+          address: user.address,
           isVerified: user.isVerified
         },
         token
@@ -164,6 +167,7 @@ router.get('/me', authenticate, async (req, res) => {
           role: user.role,
           name: user.name,
           phone: user.phone,
+          address: user.address,
           isVerified: user.isVerified,
           createdAt: user.createdAt
         }
@@ -184,11 +188,12 @@ router.get('/me', authenticate, async (req, res) => {
 // @access  Private
 router.put('/profile', authenticate, async (req, res) => {
   try {
-    const { name, phone } = req.body;
+    const { name, phone, address } = req.body;
     const updateData = {};
 
     if (name !== undefined) updateData.name = name;
     if (phone !== undefined) updateData.phone = phone;
+    if (address !== undefined) updateData.address = address;
 
     const user = await User.findByIdAndUpdate(
       req.user._id,
@@ -206,6 +211,7 @@ router.put('/profile', authenticate, async (req, res) => {
           role: user.role,
           name: user.name,
           phone: user.phone,
+          address: user.address,
           isVerified: user.isVerified
         }
       }

@@ -250,7 +250,7 @@ class _ServiceCard extends ConsumerWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // Image
-            if (service.images.isNotEmpty)
+            if (service.images.isNotEmpty && service.images.first.isNotEmpty)
               ClipRRect(
                 borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
                 child: CachedNetworkImage(
@@ -258,16 +258,33 @@ class _ServiceCard extends ConsumerWidget {
                   height: 200,
                   width: double.infinity,
                   fit: BoxFit.cover,
+                  httpHeaders: {
+                    'Accept': 'image/*',
+                  },
                   placeholder: (context, url) => Container(
                     height: 200,
                     color: Colors.grey[300],
                     child: const Center(child: CircularProgressIndicator()),
                   ),
-                  errorWidget: (context, url, error) => Container(
-                    height: 200,
-                    color: Colors.grey[300],
-                    child: const Icon(Icons.image, size: 64),
-                  ),
+                  errorWidget: (context, url, error) {
+                    print('❌ [MyServicesScreen] Image load error for: $url');
+                    print('   Error: $error');
+                    return Container(
+                      height: 200,
+                      color: Colors.grey[300],
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Icon(Icons.broken_image, size: 64, color: Colors.grey),
+                          const SizedBox(height: 8),
+                          Text(
+                            'Failed to load image',
+                            style: TextStyle(color: Colors.grey[600], fontSize: 12),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
                 ),
               )
             else
@@ -275,7 +292,17 @@ class _ServiceCard extends ConsumerWidget {
                 height: 200,
                 width: double.infinity,
                 color: Colors.grey[300],
-                child: const Icon(Icons.image, size: 64),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(Icons.image_outlined, size: 64, color: Colors.grey),
+                    const SizedBox(height: 8),
+                    Text(
+                      service.images.isEmpty ? 'No Image' : 'Invalid Image URL',
+                      style: TextStyle(color: Colors.grey[600], fontSize: 14),
+                    ),
+                  ],
+                ),
               ),
             Padding(
               padding: const EdgeInsets.all(16.0),

@@ -69,6 +69,12 @@ class _SignupScreenState extends State<SignupScreen> {
         await prefs.setString('userEmail', user['email'] ?? _emailController.text);
         await prefs.setString('userRole', user['role'] ?? role);
         await prefs.setString('userId', user['id'] ?? '');
+        
+        // Save user profile data
+        await prefs.setString('userName', user['name'] ?? '');
+        await prefs.setString('userPhone', user['phone'] ?? '');
+        await prefs.setString('userAddress', user['address'] ?? '');
+        
         await ApiConfig.setToken(token);
 
         // Verify token was saved

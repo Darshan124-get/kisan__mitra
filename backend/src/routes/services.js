@@ -2,7 +2,45 @@ const express = require('express');
 const router = express.Router();
 const Service = require('../models/Service');
 const { authenticate, authorizeLaborer, authorizeServiceOwner } = require('../middleware/auth');
-const { upload, uploadImage, uploadMultipleImages, deleteMultipleImages } = require('../config/s3');
+const {
+  upload,
+  uploadImage,
+  uploadMultipleImages,
+  deleteMultipleImages,
+  getSignedImageUrl
+} = require('../config/s3');
+
+const formatServiceResponse = async (service) => {
+  if (!service) {
+    return service;
+  }
+
+  const serviceObj = service.toObject ? service.toObject() : service;
+
+  if (Array.isArray(serviceObj.images) && serviceObj.images.length > 0) {
+    const signedImages = await Promise.all(
+      serviceObj.images.map(async (imageUrl) => {
+        try {
+          return await getSignedImageUrl(imageUrl);
+        } catch (error) {
+          console.error('Failed to sign image URL:', { imageUrl, error: error.message });
+          return imageUrl;
+        }
+      })
+    );
+    serviceObj.images = signedImages.filter((url) => typeof url === 'string' && url.trim() !== '');
+  }
+
+  return serviceObj;
+};
+
+const formatServiceListResponse = async (services) => {
+  if (!Array.isArray(services) || services.length === 0) {
+    return services;
+  }
+
+  return Promise.all(services.map((service) => formatServiceResponse(service)));
+};
 
 // @route   POST /api/services
 // @desc    Create a new service
@@ -98,10 +136,12 @@ router.post('/', authenticate, authorizeLaborer, upload.array('images', 10), asy
 
     await service.save();
 
+    const formattedService = await formatServiceResponse(service);
+
     res.status(201).json({
       success: true,
       message: 'Service created successfully',
-      data: { service }
+      data: { service: formattedService }
     });
   } catch (error) {
     console.error('Create service error:', error);
@@ -122,10 +162,12 @@ router.get('/my-services', authenticate, authorizeLaborer, async (req, res) => {
       .sort({ createdAt: -1 })
       .populate('laborerId', 'name email phone');
 
+    const formattedServices = await formatServiceListResponse(services);
+
     res.status(200).json({
       success: true,
-      count: services.length,
-      data: { services }
+      count: formattedServices.length,
+      data: { services: formattedServices }
     });
   } catch (error) {
     console.error('Get my services error:', error);
@@ -177,10 +219,12 @@ router.get('/nearby', async (req, res) => {
       .populate('laborerId', 'name email phone')
       .limit(parseInt(limit));
 
+    const formattedServices = await formatServiceListResponse(services);
+
     res.status(200).json({
       success: true,
-      count: services.length,
-      data: { services }
+      count: formattedServices.length,
+      data: { services: formattedServices }
     });
   } catch (error) {
     console.error('Get nearby services error:', error);
@@ -204,12 +248,41 @@ router.post('/upload-image', authenticate, authorizeLaborer, upload.single('imag
       });
     }
 
-    const imageUrl = await uploadImage(req.file, 'services');
+    // Handle buffer conversion
+    let fileBuffer = req.file.buffer;
+    if (!Buffer.isBuffer(fileBuffer)) {
+      if (fileBuffer instanceof Uint8Array) {
+        fileBuffer = Buffer.from(fileBuffer);
+      } else if (Array.isArray(fileBuffer)) {
+        fileBuffer = Buffer.from(fileBuffer);
+      } else if (typeof fileBuffer === 'string') {
+        fileBuffer = Buffer.from(fileBuffer, 'base64');
+      } else if (fileBuffer && typeof fileBuffer === 'object') {
+        if (fileBuffer.data) {
+          fileBuffer = Buffer.from(fileBuffer.data);
+        } else if (fileBuffer.buffer) {
+          fileBuffer = Buffer.from(fileBuffer.buffer);
+        } else {
+          const bufferData = Object.values(fileBuffer);
+          fileBuffer = Buffer.from(bufferData);
+        }
+      }
+    }
 
-    res.status(200).json({
-      success: true,
-      data: { imageUrl }
-    });
+    if (!Buffer.isBuffer(fileBuffer)) {
+      throw new Error('Failed to convert file to Buffer');
+    }
+
+    const imageUrl = await uploadImage(fileBuffer, req.file.originalname, 'services');
+
+    if (imageUrl && typeof imageUrl === 'string' && imageUrl.trim() !== '') {
+      res.status(200).json({
+        success: true,
+        url: imageUrl.trim()
+      });
+    } else {
+      throw new Error('Upload completed but no valid URL returned from S3');
+    }
   } catch (error) {
     console.error('Upload image error:', error);
     res.status(500).json({
@@ -270,15 +343,17 @@ router.get('/search', async (req, res) => {
       .skip(skip)
       .limit(parseInt(limit));
 
+    const formattedServices = await formatServiceListResponse(services);
+
     const total = await Service.countDocuments(query);
 
     res.status(200).json({
       success: true,
-      count: services.length,
+      count: formattedServices.length,
       total,
       page: parseInt(page),
       pages: Math.ceil(total / parseInt(limit)),
-      data: { services }
+      data: { services: formattedServices }
     });
   } catch (error) {
     console.error('Search services error:', error);
@@ -306,9 +381,11 @@ router.get('/:id', async (req, res) => {
       });
     }
 
+    const formattedService = await formatServiceResponse(service);
+
     res.status(200).json({
       success: true,
-      data: { service }
+      data: { service: formattedService }
     });
   } catch (error) {
     console.error('Get service error:', error);
@@ -402,10 +479,12 @@ router.put('/:id', authenticate, authorizeServiceOwner, upload.array('images', 1
       { new: true, runValidators: true }
     );
 
+    const formattedService = await formatServiceResponse(service);
+
     res.status(200).json({
       success: true,
       message: 'Service updated successfully',
-      data: { service }
+      data: { service: formattedService }
     });
   } catch (error) {
     console.error('Update service error:', error);
@@ -469,10 +548,12 @@ router.put('/:id/availability', authenticate, authorizeServiceOwner, async (req,
       { new: true }
     );
 
+    const formattedService = await formatServiceResponse(service);
+
     res.status(200).json({
       success: true,
       message: 'Availability updated successfully',
-      data: { service }
+      data: { service: formattedService }
     });
   } catch (error) {
     console.error('Update availability error:', error);
@@ -513,10 +594,12 @@ router.put('/:id/location', authenticate, authorizeServiceOwner, async (req, res
       { new: true }
     );
 
+    const formattedService = await formatServiceResponse(service);
+
     res.status(200).json({
       success: true,
       message: 'Location updated successfully',
-      data: { service }
+      data: { service: formattedService }
     });
   } catch (error) {
     console.error('Update location error:', error);
@@ -608,15 +691,17 @@ router.get('/', async (req, res) => {
       .skip(skip)
       .limit(parseInt(limit));
 
+    const formattedServices = await formatServiceListResponse(services);
+
     const total = await Service.countDocuments(query);
 
     res.status(200).json({
       success: true,
-      count: services.length,
+      count: formattedServices.length,
       total,
       page: parseInt(page),
       pages: Math.ceil(total / parseInt(limit)),
-      data: { services }
+      data: { services: formattedServices }
     });
   } catch (error) {
     console.error('Get services error:', error);
@@ -643,20 +728,76 @@ router.post('/upload-image', authenticate, authorizeLaborer, upload.single('imag
     console.log('📤 Received image upload request:', {
       filename: req.file.originalname,
       size: req.file.size,
-      mimetype: req.file.mimetype
+      mimetype: req.file.mimetype,
+      bufferType: typeof req.file.buffer,
+      isBuffer: Buffer.isBuffer(req.file.buffer),
+      bufferConstructor: req.file.buffer?.constructor?.name
     });
 
-    // Upload to S3 using uploadImage function
-    const imageUrl = await uploadImage(req.file.buffer, req.file.originalname, 'services');
+    // Ensure we have a proper Buffer
+    let fileBuffer = req.file.buffer;
     
-    if (imageUrl) {
+    // Handle different buffer formats
+    if (Buffer.isBuffer(fileBuffer)) {
+      // Already a Buffer, use as is
+      fileBuffer = fileBuffer;
+    } else if (fileBuffer instanceof Uint8Array) {
+      // Convert Uint8Array to Buffer
+      fileBuffer = Buffer.from(fileBuffer);
+    } else if (Array.isArray(fileBuffer)) {
+      // Convert Array to Buffer
+      fileBuffer = Buffer.from(fileBuffer);
+    } else if (typeof fileBuffer === 'string') {
+      // Convert string to Buffer
+      fileBuffer = Buffer.from(fileBuffer, 'base64');
+    } else if (fileBuffer && typeof fileBuffer === 'object') {
+      // If it's an object, try to extract data or convert
+      // Check if it has a data property (common in some formats)
+      if (fileBuffer.data) {
+        fileBuffer = Buffer.from(fileBuffer.data);
+      } else if (fileBuffer.buffer) {
+        fileBuffer = Buffer.from(fileBuffer.buffer);
+      } else {
+        // Try to convert the object to a Buffer
+        // This handles cases where the buffer might be wrapped
+        const bufferData = Object.values(fileBuffer);
+        fileBuffer = Buffer.from(bufferData);
+      }
+    } else {
+      throw new Error('Invalid file buffer format');
+    }
+
+    // Final validation
+    if (!Buffer.isBuffer(fileBuffer)) {
+      throw new Error('Failed to convert file to Buffer');
+    }
+
+    // Upload to S3 using uploadImage function
+    const imageUrl = await uploadImage(fileBuffer, req.file.originalname, 'services');
+    
+    console.log('📤 Upload result:', {
+      imageUrl: imageUrl,
+      urlType: typeof imageUrl,
+      urlLength: imageUrl?.length,
+      isEmpty: !imageUrl || (typeof imageUrl === 'string' && imageUrl.trim() === '')
+    });
+    
+    // Ensure imageUrl is a string and not empty
+    if (imageUrl && typeof imageUrl === 'string' && imageUrl.trim() !== '') {
       console.log('✅ Image uploaded successfully:', imageUrl);
       res.status(200).json({
         success: true,
-        url: imageUrl
+        url: imageUrl.trim()
       });
     } else {
-      throw new Error('Upload completed but no URL returned');
+      console.error('❌ Upload completed but imageUrl is invalid:', {
+        imageUrl: imageUrl,
+        type: typeof imageUrl,
+        isNull: imageUrl === null,
+        isUndefined: imageUrl === undefined,
+        isEmpty: imageUrl === ''
+      });
+      throw new Error('Upload completed but no valid URL returned from S3');
     }
   } catch (error) {
     console.error('❌ Upload image error:', error);
@@ -742,15 +883,17 @@ router.get('/search', async (req, res) => {
       .skip(skip)
       .limit(parseInt(limit));
 
+    const formattedServices = await formatServiceListResponse(services);
+
     const total = await Service.countDocuments(query);
 
     res.status(200).json({
       success: true,
-      count: services.length,
+      count: formattedServices.length,
       total,
       page: parseInt(page),
       pages: Math.ceil(total / parseInt(limit)),
-      data: { services }
+      data: { services: formattedServices }
     });
   } catch (error) {
     console.error('Search services error:', error);

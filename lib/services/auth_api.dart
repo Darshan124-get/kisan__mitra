@@ -103,5 +103,42 @@ class AuthApi {
       throw Exception('Error getting user: $e');
     }
   }
+
+  Future<Map<String, dynamic>> updateProfile({
+    String? name,
+    String? phone,
+    String? address,
+  }) async {
+    try {
+      final token = await ApiConfig.getToken();
+      if (token == null) {
+        throw Exception('Not authenticated');
+      }
+
+      final response = await http.put(
+        Uri.parse('$baseUrl/auth/profile'),
+        headers: await ApiConfig.getHeaders(),
+        body: jsonEncode({
+          if (name != null) 'name': name,
+          if (phone != null) 'phone': phone,
+          if (address != null) 'address': address,
+        }),
+      );
+
+      final data = jsonDecode(response.body);
+
+      if (response.statusCode == 200 && data['success'] == true) {
+        return {
+          'success': true,
+          'user': data['data']['user'],
+          'message': data['message'] ?? 'Profile updated successfully',
+        };
+      } else {
+        throw Exception(data['message'] ?? 'Failed to update profile');
+      }
+    } catch (e) {
+      throw Exception('Error updating profile: $e');
+    }
+  }
 }
 

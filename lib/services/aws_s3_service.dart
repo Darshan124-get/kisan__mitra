@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:dio/dio.dart';
@@ -34,20 +35,71 @@ class AwsS3Service {
 
       print('📤 [AwsS3Service] File size: ${bytes.length} bytes, Filename: $fileName');
 
+      // Determine content type based on file extension
+      String contentType = 'image/jpeg'; // Default
+      final extension = fileName.toLowerCase().split('.').last;
+      switch (extension) {
+        case 'jpg':
+        case 'jpeg':
+          contentType = 'image/jpeg';
+          break;
+        case 'png':
+          contentType = 'image/png';
+          break;
+        case 'gif':
+          contentType = 'image/gif';
+          break;
+        case 'webp':
+          contentType = 'image/webp';
+          break;
+        default:
+          contentType = 'image/jpeg';
+      }
+
+      print('📤 [AwsS3Service] Content type: $contentType');
+
       // Create multipart request
       final request = http.MultipartRequest(
         'POST',
         Uri.parse('${ApiConfig.baseUrl}/services/upload-image'),
       );
 
+      // Set authorization header - DO NOT set Content-Type for multipart
       request.headers['Authorization'] = 'Bearer $token';
-      request.files.add(
-        http.MultipartFile.fromBytes(
-          'image',
-          bytes,
-          filename: fileName,
-        ),
+      
+      // Ensure filename has correct extension for backend detection
+      String finalFileName = fileName;
+      if (!finalFileName.toLowerCase().endsWith('.jpg') && 
+          !finalFileName.toLowerCase().endsWith('.jpeg') &&
+          !finalFileName.toLowerCase().endsWith('.png') &&
+          !finalFileName.toLowerCase().endsWith('.gif') &&
+          !finalFileName.toLowerCase().endsWith('.webp')) {
+        // Add extension based on content type
+        switch (contentType) {
+          case 'image/png':
+            finalFileName = '$fileName.png';
+            break;
+          case 'image/gif':
+            finalFileName = '$fileName.gif';
+            break;
+          case 'image/webp':
+            finalFileName = '$fileName.webp';
+            break;
+          default:
+            finalFileName = '$fileName.jpg';
+        }
+      }
+      
+      // Create multipart file with proper field name
+      // The field name must match what the backend expects: 'image'
+      final multipartFile = http.MultipartFile(
+        'image',
+        Stream.value(bytes),
+        bytes.length,
+        filename: finalFileName,
       );
+      
+      request.files.add(multipartFile);
 
       print('📤 [AwsS3Service] Sending request to: ${ApiConfig.baseUrl}/services/upload-image');
 
@@ -55,14 +107,36 @@ class AwsS3Service {
       final response = await http.Response.fromStream(streamedResponse);
 
       print('📥 [AwsS3Service] Response status: ${response.statusCode}');
+      print('📥 [AwsS3Service] Response body: ${response.body}');
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        if (data['success'] == true && data['url'] != null) {
-          print('✅ [AwsS3Service] Image uploaded successfully: ${data['url']}');
-          return data['url'] as String;
+        print('📥 [AwsS3Service] Parsed data: $data');
+        
+        // Check for url in different possible locations and nested structures
+        String? imageUrl;
+        
+        // Try top-level first
+        imageUrl = data['url'] ?? data['imageUrl'] ?? data['image_url'];
+        
+        // If not found, check nested in data object
+        if ((imageUrl == null || imageUrl.isEmpty) && data['data'] != null) {
+          final dataObj = data['data'];
+          imageUrl = dataObj['url'] ?? 
+                     dataObj['imageUrl'] ?? 
+                     dataObj['ImageUrl'] ?? 
+                     dataObj['image_url'];
+        }
+        
+        print('📥 [AwsS3Service] success: ${data['success']}, found url: $imageUrl');
+        
+        if (data['success'] == true && imageUrl != null && imageUrl.toString().isNotEmpty) {
+          print('✅ [AwsS3Service] Image uploaded successfully: $imageUrl');
+          return imageUrl.toString();
         } else {
-          throw Exception('Upload succeeded but no URL returned');
+          print('❌ [AwsS3Service] Response data: $data');
+          print('❌ [AwsS3Service] URL is null or empty: $imageUrl');
+          throw Exception('Upload succeeded but no URL returned. Response: ${response.body}');
         }
       } else {
         // Parse error response from backend

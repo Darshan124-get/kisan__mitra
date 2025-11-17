@@ -284,6 +284,19 @@ class _BookingCard extends ConsumerWidget {
                           'Farmer: ${booking.farmerName ?? 'Unknown'}',
                           style: TextStyle(color: Colors.grey[600]),
                         ),
+                        if (booking.farmerPhone != null && booking.farmerPhone!.isNotEmpty) ...[
+                          const SizedBox(height: 4),
+                          Row(
+                            children: [
+                              Icon(Icons.phone, size: 14, color: Colors.grey[600]),
+                              const SizedBox(width: 4),
+                              Text(
+                                booking.farmerPhone!,
+                                style: TextStyle(color: Colors.grey[600], fontSize: 12),
+                              ),
+                            ],
+                          ),
+                        ],
                       ],
                     ),
                   ),
@@ -459,6 +472,8 @@ class _BookingCard extends ConsumerWidget {
                 ),
                 const SizedBox(height: 24),
                 _DetailRow('Farmer', booking.farmerName ?? 'Unknown'),
+                if (booking.farmerPhone != null && booking.farmerPhone!.isNotEmpty)
+                  _DetailRow('Farmer Phone', booking.farmerPhone!),
                 _DetailRow('Date', '${booking.bookingDate.day}/${booking.bookingDate.month}/${booking.bookingDate.year}'),
                 _DetailRow('Time', '${booking.startTime} - ${booking.endTime}'),
                 _DetailRow('Duration', '${booking.duration} hours'),

@@ -33,15 +33,21 @@ class _LoginScreenState extends State<LoginScreen> {
       );
 
       if (result['success'] == true) {
-    final prefs = await SharedPreferences.getInstance();
+        final prefs = await SharedPreferences.getInstance();
         final user = result['user'] as Map<String, dynamic>;
         final token = result['token'] as String;
 
         // Save authentication data
-    await prefs.setBool('isLoggedIn', true);
+        await prefs.setBool('isLoggedIn', true);
         await prefs.setString('userEmail', user['email'] ?? _emailController.text);
         await prefs.setString('userRole', user['role'] ?? 'farmer');
         await prefs.setString('userId', user['id'] ?? '');
+        
+        // Save user profile data
+        await prefs.setString('userName', user['name'] ?? '');
+        await prefs.setString('userPhone', user['phone'] ?? '');
+        await prefs.setString('userAddress', user['address'] ?? '');
+        
         await ApiConfig.setToken(token);
 
         if (mounted) {

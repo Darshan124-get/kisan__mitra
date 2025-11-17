@@ -2,6 +2,7 @@ const AWS = require('aws-sdk');
 const multer = require('multer');
 const path = require('path');
 const crypto = require('crypto');
+const { URL } = require('url');
 
 // Configure AWS S3
 const s3 = new AWS.S3({
@@ -11,18 +12,87 @@ const s3 = new AWS.S3({
 });
 
 const BUCKET_NAME = process.env.AWS_S3_BUCKET_NAME;
+const DEFAULT_SIGNED_URL_EXPIRY = parseInt(process.env.AWS_SIGNED_URL_EXPIRY || (60 * 60 * 24 * 7), 10); // default 7 days
+
+const extractKeyFromUrl = (imageUrl) => {
+  if (!imageUrl) {
+    return null;
+  }
+
+  // If already a key (no protocol)
+  if (!imageUrl.startsWith('http')) {
+    return imageUrl.replace(/^\/+/, '');
+  }
+
+  try {
+    const parsedUrl = new URL(imageUrl);
+    if (
+      !parsedUrl.hostname ||
+      (!parsedUrl.hostname.includes(BUCKET_NAME) &&
+        !parsedUrl.hostname.includes('amazonaws.com'))
+    ) {
+      return null;
+    }
+    const pathname = parsedUrl.pathname || '';
+    return pathname.replace(/^\/+/, '');
+  } catch (error) {
+    console.warn('⚠️ Failed to parse image URL for key extraction:', imageUrl, error.message);
+    return null;
+  }
+};
+
+const generateSignedUrl = (key, expiresIn = DEFAULT_SIGNED_URL_EXPIRY) => {
+  if (!key || !BUCKET_NAME) {
+    return null;
+  }
+
+  return new Promise((resolve, reject) => {
+    s3.getSignedUrl(
+      'getObject',
+      {
+        Bucket: BUCKET_NAME,
+        Key: key,
+        Expires: expiresIn
+      },
+      (err, url) => {
+        if (err) {
+          return reject(err);
+        }
+        resolve(url);
+      }
+    );
+  });
+};
+
+const getSignedImageUrl = async (imageUrl, expiresIn = DEFAULT_SIGNED_URL_EXPIRY) => {
+  if (!imageUrl || !BUCKET_NAME || imageUrl.includes('X-Amz-Algorithm=')) {
+    return imageUrl;
+  }
+
+  const key = extractKeyFromUrl(imageUrl);
+  if (!key) {
+    return imageUrl;
+  }
+
+  try {
+    const signedUrl = await generateSignedUrl(key, expiresIn);
+    return signedUrl || imageUrl;
+  } catch (error) {
+    console.error('⚠️ Failed to generate signed image URL:', {
+      imageUrl,
+      key,
+      error: error.message
+    });
+    return imageUrl;
+  }
+};
 
 // Configure multer for memory storage (we'll upload directly to S3)
 const storage = multer.memoryStorage();
 
 const fileFilter = (req, file, cb) => {
-  // Accept only image files
-  const allowedMimes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'];
-  if (allowedMimes.includes(file.mimetype)) {
-    cb(null, true);
-  } else {
-    cb(new Error('Invalid file type. Only JPEG, PNG, GIF and WebP images are allowed.'), false);
-  }
+  // Accept all files - no validation
+  cb(null, true);
 };
 
 const upload = multer({
@@ -48,6 +118,35 @@ const uploadImage = async (fileBuffer, originalName, folder = 'services') => {
 
     if (!process.env.AWS_ACCESS_KEY_ID || !process.env.AWS_SECRET_ACCESS_KEY) {
       throw new Error('AWS credentials are not configured');
+    }
+
+    // Ensure fileBuffer is a proper Buffer
+    if (!Buffer.isBuffer(fileBuffer)) {
+      if (fileBuffer instanceof Uint8Array) {
+        fileBuffer = Buffer.from(fileBuffer);
+      } else if (Array.isArray(fileBuffer)) {
+        fileBuffer = Buffer.from(fileBuffer);
+      } else if (typeof fileBuffer === 'string') {
+        fileBuffer = Buffer.from(fileBuffer, 'base64');
+      } else if (fileBuffer && typeof fileBuffer === 'object') {
+        // Handle object case
+        if (fileBuffer.data) {
+          fileBuffer = Buffer.from(fileBuffer.data);
+        } else if (fileBuffer.buffer) {
+          fileBuffer = Buffer.from(fileBuffer.buffer);
+        } else {
+          // Try converting object values
+          const bufferData = Object.values(fileBuffer);
+          fileBuffer = Buffer.from(bufferData);
+        }
+      } else {
+        throw new Error('Invalid file buffer type: ' + typeof fileBuffer);
+      }
+    }
+    
+    // Final check
+    if (!Buffer.isBuffer(fileBuffer)) {
+      throw new Error('Failed to convert to Buffer');
     }
 
     // Generate unique filename
@@ -89,8 +188,46 @@ const uploadImage = async (fileBuffer, originalName, folder = 'services') => {
       }
     }
     
-    console.log(`✅ Successfully uploaded to S3: ${result.Location}`);
-    return result.Location; // Return the public URL
+    // Get the URL - try Location first, then construct it manually
+    let imageUrl = result.Location;
+    
+    console.log(`📤 S3 Upload Result:`, {
+      Location: result.Location,
+      Key: result.Key,
+      Bucket: result.Bucket,
+      ETag: result.ETag,
+      hasLocation: !!result.Location
+    });
+    
+    // If Location is not available, construct it manually
+    if (!imageUrl || imageUrl.trim() === '') {
+      const region = process.env.AWS_REGION || 'us-east-1';
+      // Handle different region formats for S3 URL
+      let s3Region = region;
+      if (region === 'us-east-1') {
+        // us-east-1 doesn't need region in URL
+        imageUrl = `https://${BUCKET_NAME}.s3.amazonaws.com/${result.Key}`;
+      } else {
+        // Other regions need region in URL
+        imageUrl = `https://${BUCKET_NAME}.s3.${s3Region}.amazonaws.com/${result.Key}`;
+      }
+      console.log(`📤 Constructed URL manually: ${imageUrl}`);
+    }
+    
+    console.log(`✅ Successfully uploaded to S3:`, {
+      Location: result.Location,
+      Key: result.Key,
+      Bucket: result.Bucket,
+      FinalURL: imageUrl,
+      URLType: typeof imageUrl,
+      URLLength: imageUrl?.length
+    });
+    
+    if (!imageUrl || imageUrl.trim() === '') {
+      throw new Error('S3 upload succeeded but no URL available');
+    }
+    
+    return imageUrl; // Return the public URL
   } catch (error) {
     console.error('❌ Error uploading image to S3:', error);
     console.error('   Bucket:', BUCKET_NAME);
@@ -203,6 +340,7 @@ module.exports = {
   uploadMultipleImages,
   deleteImage,
   deleteMultipleImages,
-  compressImage
+  compressImage,
+  getSignedImageUrl
 };
 
